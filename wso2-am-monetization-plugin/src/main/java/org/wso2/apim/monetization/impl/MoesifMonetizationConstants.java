@@ -1,0 +1,17 @@
+package org.wso2.apim.monetization.impl;
+
+public class MoesifMonetizationConstants {
+    public static final String MONETIZATION_INFO = "MonetizationInfo";
+    public static final String MOESIF_APPLICATION_KEY = "MoesifApplicationKey";
+    public static final String BILLING_PLANS_URL = "https://api.moesif.com/v1/~/billing/catalog/plans?provider=%s";
+
+    public static final String BILLING_PRICE_URL = "https://api.moesif.com/v1/~/billing/catalog/prices?provider=%s";
+    public static final String BILLING_PLAN_STATUS_ACTIVE = "active";
+
+
+
+    //Price
+    public static final String BILLING_PRICE_STATUS_ACTIVE = "active";
+
+
+}
