@@ -75,13 +75,14 @@ public class MoesifMonetizationImpl implements Monetization {
             JsonObject createPlanPayload = new JsonObject();
             createPlanPayload.addProperty("name", moesifProductName);
             createPlanPayload.addProperty("status", MoesifMonetizationConstants.BILLING_PLAN_STATUS_ACTIVE);
-            createPlanPayload.addProperty("provider", Provider.STRIPE.toString());
+            createPlanPayload.addProperty("provider", Provider.STRIPE.getValue());
 
 //            createPlanPayload.addProperty("billing_type", "continuous_reporting");
 //            createPlanPayload.addProperty("reporting_period", "5m");
 
             // Send request
-            String planResponse = MonetizationUtils.sendPostRequest(createBillingPlanURL, createPlanPayload.toString(), Moesif_Application_Key);
+            String planResponse = MonetizationUtils.
+                    sendPostRequest(createBillingPlanURL, createPlanPayload.toString(), Moesif_Application_Key);
             log.info("Plan Response: " + planResponse);
 
             // Extract plan_id from response (assuming JSON like { "id": "prod_xxx", ... })
@@ -107,31 +108,39 @@ public class MoesifMonetizationImpl implements Monetization {
 
                         JsonObject createPricePayload = new JsonObject();
                         createPricePayload.addProperty("name", currentTier.getName());
-                        createPricePayload.addProperty("provider", Provider.STRIPE.toString());
+                        createPricePayload.addProperty("provider", Provider.STRIPE.getValue());
                         createPricePayload.addProperty("plan_id", planId);
                         createPricePayload.addProperty("status", MoesifMonetizationConstants.BILLING_PRICE_STATUS_ACTIVE);
 
-                        //Prepare ENUM based on Moesif
-                        createPricePayload.addProperty("pricing_model", "per_unit");
+                        if (!currentTier.getMonetizationAttributes().get("pricePerRequest").isEmpty()) {
+                            createPricePayload.addProperty("pricing_model", MoesifPricingModel.PER_UNIT.getValue());
+                            createPricePayload.addProperty("price_in_decimal", currentTier.getMonetizationAttributes().get("pricePerRequest"));
 
+                            //Create new billing meter for the new Product and Price
+                            JsonObject billingMeterPayload = new JsonObject();
+                            billingMeterPayload.addProperty("display_name", currentTier.getName() + " Meter");
+                            billingMeterPayload.addProperty("event_name", moesifProductName + " Event");
+                            createPricePayload.add("price_meter", billingMeterPayload);
+
+                        } else if (!currentTier.getMonetizationAttributes().get("fixedPrice").isEmpty()) {
+                            createPricePayload.addProperty("pricing_model", MoesifPricingModel.FLAT_RATE.getValue());
+                            createPricePayload.addProperty("price_in_decimal", currentTier.getMonetizationAttributes().get("fixedPrice"));
+                            //This has to be further evaluated and attach a governance rule accordingly
+                            createPricePayload.addProperty("usage_aggregator", "");
+
+                        }
 //                        createPricePayload.addProperty("usage_aggregator", "sum");
 //                        createPricePayload.add("currency_prices", currencyPrices);
 
                         //To_DO get these values from the UI
                         createPricePayload.addProperty("period", 1);
                         createPricePayload.addProperty("period_units", "M");
-                        createPricePayload.addProperty("price_in_decimal", currentTier.getMonetizationAttributes().get("pricePerRequest"));
                         createPricePayload.addProperty("currency", currentTier.getMonetizationAttributes().get("currencyType"));
 
-                        //Create new billing meter for the new Product and Price
-                        JsonObject billingMeterPayload = new JsonObject();
-                        billingMeterPayload.addProperty("display_name",currentTier.getName()+" Meter");
-                        billingMeterPayload.addProperty("event_name",moesifProductName+" Event");
-                        createPricePayload.add("price_meter",billingMeterPayload);
-
-                        String priceResponse = MonetizationUtils.sendPostRequest(createPriceUrl, createPricePayload.toString(), Moesif_Application_Key);
-
+                        String priceResponse = MonetizationUtils.
+                                sendPostRequest(createPriceUrl, createPricePayload.toString(), Moesif_Application_Key);
                         log.info("Price Response: " + priceResponse);
+
 
                     }
                 }
@@ -146,7 +155,7 @@ public class MoesifMonetizationImpl implements Monetization {
             throw new RuntimeException(e);
         }
 
-        return  true;
+        return true;
     }
 
     @Override
@@ -173,62 +182,6 @@ public class MoesifMonetizationImpl implements Monetization {
     public boolean publishMonetizationUsageRecords(MonetizationUsagePublishInfo monetizationUsagePublishInfo) throws MonetizationException {
         return false;
     }
-
-//    private String getMoesifApplicationKey(String tenantDomain) throws MoesifMonetizationException {
-//
-//        try {
-//            //get the application key of platform account from tenant conf json file
-//            JSONObject tenantConfig = APIUtil.getTenantConfig(tenantDomain);
-//
-//            if (tenantConfig.containsKey(MoesifMonetizationConstants.MONETIZATION_INFO)) {
-//                JSONObject monetizationInfo = (JSONObject) tenantConfig
-//                        .get(MoesifMonetizationConstants.MONETIZATION_INFO);
-//                if (monetizationInfo.containsKey(MoesifMonetizationConstants.MOESIF_APPLICATION_KEY)) {
-//                    String moesifApplicationKey = monetizationInfo
-//                            .get(MoesifMonetizationConstants.MOESIF_APPLICATION_KEY).toString();
-//                    if (StringUtils.isBlank(moesifApplicationKey)) {
-//                        String errorMessage = "Moesif application key is empty for tenant : " + tenantDomain;
-//                        throw new MoesifMonetizationException(errorMessage);
-//                    }
-//                    return moesifApplicationKey;
-//                }
-//            }
-//        } catch (APIManagementException e) {
-//            String errorMessage = "Failed to get the configuration for tenant from DB:  " + tenantDomain;
-//            log.error(errorMessage);
-//            throw new MoesifMonetizationException(errorMessage, e);
-//        }
-//        return StringUtils.EMPTY;
-//    }
-
-//    private String sendPostRequest(String apiUrl, String createPlanPayload, String token) throws IOException {
-//        URL url = new URL(apiUrl);
-//        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-//        conn.setRequestMethod("POST");
-//        conn.setRequestProperty("Content-Type", "application/json");
-//        conn.setRequestProperty("Accept", "application/json");
-//        conn.setRequestProperty("Authorization", "Bearer " + token);
-//        conn.setDoOutput(true);
-//
-//        try (OutputStream os = conn.getOutputStream()) {
-//            byte[] input = createPlanPayload.getBytes(StandardCharsets.UTF_8);
-//            os.write(input, 0, input.length);
-//        }
-//
-//        int responseCode = conn.getResponseCode();
-//        StringBuilder response = new StringBuilder();
-//        try (java.io.BufferedReader br = new java.io.BufferedReader(
-//                new java.io.InputStreamReader(
-//                        responseCode >= 200 && responseCode < 300 ? conn.getInputStream() : conn.getErrorStream(),
-//                        StandardCharsets.UTF_8))) {
-//            String responseLine;
-//            while ((responseLine = br.readLine()) != null) {
-//                response.append(responseLine.trim());
-//            }
-//        }
-//        conn.disconnect();
-//        return response.toString();
-//    }
 
     /**
      * Very basic extraction of "id" field from JSON response.
