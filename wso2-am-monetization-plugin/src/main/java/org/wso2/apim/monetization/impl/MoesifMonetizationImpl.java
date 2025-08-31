@@ -75,11 +75,11 @@ public class MoesifMonetizationImpl implements Monetization {
             String apiVersion = api.getId().getVersion();
             String apiProvider = api.getId().getProviderName();
 
-            String moesifProductName = apiName + "-" + apiVersion + "-" + apiProvider;
+            String moesifPlanName = apiName + "-" + apiVersion + "-" + apiProvider;
 
             // JSON body
             JsonObject createPlanPayload = new JsonObject();
-            createPlanPayload.addProperty("name", moesifProductName);
+            createPlanPayload.addProperty("name", moesifPlanName);
             createPlanPayload.addProperty("status", MoesifMonetizationConstants.BILLING_PLAN_STATUS_ACTIVE);
             createPlanPayload.addProperty("provider", Provider.STRIPE.getValue());
 
@@ -125,7 +125,7 @@ public class MoesifMonetizationImpl implements Monetization {
                             //Create new billing meter for the new Product and Price
                             JsonObject billingMeterPayload = new JsonObject();
                             billingMeterPayload.addProperty("display_name", currentTier.getName() + " Meter");
-                            billingMeterPayload.addProperty("event_name", moesifProductName + " Event");
+                            billingMeterPayload.addProperty("event_name", moesifPlanName + " Event");
                             createPricePayload.add("price_meter", billingMeterPayload);
 
                         } else if (!currentTier.getMonetizationAttributes().get("fixedPrice").isEmpty()) {
@@ -161,7 +161,7 @@ public class MoesifMonetizationImpl implements Monetization {
                         }
                         try (Connection con = APIMgtDBUtil.getConnection()) {
                             int apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
-                            monetizationDAO.addMonetizationData(apiId, planId, tierPlanMap);
+                            monetizationDAO.addMonetizationData(apiId, planId, moesifPlanName, tierPlanMap);
                         } catch (SQLException | APIManagementException e) {
                             throw new RuntimeException(e);
                         }
