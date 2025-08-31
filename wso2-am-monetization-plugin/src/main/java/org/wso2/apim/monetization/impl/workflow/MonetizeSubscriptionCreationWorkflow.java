@@ -17,6 +17,7 @@ import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONObject;
 import org.wso2.apim.monetization.impl.MoesifMonetizationConstants;
 import org.wso2.apim.monetization.impl.MoesifMonetizationImpl;
+import org.wso2.apim.monetization.impl.MonetizationDAO;
 import org.wso2.apim.monetization.impl.StripeMonetizationConstants;
 import org.wso2.apim.monetization.impl.util.MonetizationUtils;
 import org.wso2.carbon.apimgt.api.APIManagementException;
@@ -48,6 +49,9 @@ import java.util.Map;
 import java.util.Properties;
 
 public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
+
+    private final MonetizationDAO monetizationDAO = MonetizationDAO.getInstance();
+
     @Override
     public String getWorkflowType() {
         return null;
@@ -103,7 +107,6 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
         CustomerCreateParams params =
                 CustomerCreateParams.builder()
                         .setName(((SubscriptionWorkflowDTO) workflowDTO).getSubscriber())
-                        .setEmail("subscriptiontest@example.com")
                         .build();
         Customer customer;
 
@@ -137,10 +140,20 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
             throw new RuntimeException(ex);
         }
 
-        //creating Subscriptions
-//        int apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
+        String priceId;
+        try (Connection con = APIMgtDBUtil.getConnection()) {
 
-        String priceId = "";
+            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
+            priceId = monetizationDAO.getPriceIdForTier(apiId,
+                    subWorkFlowDTO.getTierName());
+        } catch (APIManagementException | SQLException e) {
+            throw new RuntimeException(e);
+        }
+
+
+//        String priceId = "";
+
+
         try {
             createMonetizedSubscriptions(priceId, customer);
         } catch (StripeException e) {

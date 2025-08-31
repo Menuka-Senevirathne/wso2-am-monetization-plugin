@@ -16,6 +16,8 @@ import org.wso2.carbon.apimgt.api.model.MonetizationUsagePublishInfo;
 import org.wso2.carbon.apimgt.api.model.Tier;
 import org.wso2.carbon.apimgt.api.model.policy.SubscriptionPolicy;
 import org.wso2.carbon.apimgt.impl.APIConstants;
+import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
+import org.wso2.carbon.apimgt.impl.utils.APIMgtDBUtil;
 import org.wso2.carbon.apimgt.impl.utils.APIUtil;
 import com.google.gson.JsonObject;
 import com.google.gson.Gson;
@@ -30,12 +32,16 @@ import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 
 
 public class MoesifMonetizationImpl implements Monetization {
     private static final Log log = LogFactory.getLog(MoesifMonetizationImpl.class);
+
+    private final MonetizationDAO monetizationDAO = MonetizationDAO.getInstance();
 
     @Override
     public boolean createBillingPlan(SubscriptionPolicy subscriptionPolicy) throws MonetizationException {
@@ -86,7 +92,7 @@ public class MoesifMonetizationImpl implements Monetization {
             log.info("Plan Response: " + planResponse);
 
             // Extract plan_id from response (assuming JSON like { "id": "prod_xxx", ... })
-            String planId = extractPlanId(planResponse);
+            String planId = extractId(planResponse);
             if (planId == null) {
                 throw new MonetizationException("Failed to extract plan_id from Moesif response");
             }
@@ -139,8 +145,26 @@ public class MoesifMonetizationImpl implements Monetization {
 
                         String priceResponse = MonetizationUtils.
                                 sendPostRequest(createPriceUrl, createPricePayload.toString(), Moesif_Application_Key);
+
                         log.info("Price Response: " + priceResponse);
 
+                        if (StringUtils.isNotBlank(priceResponse)) {
+                            String priceId = extractId(priceResponse);
+                            if (StringUtils.isNotBlank(priceId)) {
+                                tierPlanMap.put(currentTier.getName(), priceId);
+                                log.info("Monetization is enabled for the API: " + api.getId() +
+                                        " with Tier: " + currentTier.getName() + " and Moesif Price ID: " + priceId);
+                            } else {
+                                String errorMessage = "Failed to extract price_id from Moesif response";
+                                throw new MonetizationException(errorMessage);
+                            }
+                        }
+                        try (Connection con = APIMgtDBUtil.getConnection()) {
+                            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
+                            monetizationDAO.addMonetizationData(apiId, planId, tierPlanMap);
+                        } catch (SQLException | APIManagementException e) {
+                            throw new RuntimeException(e);
+                        }
 
                     }
                 }
@@ -187,7 +211,7 @@ public class MoesifMonetizationImpl implements Monetization {
      * Very basic extraction of "id" field from JSON response.
      * In production, better to use a JSON library like Jackson/Gson.
      */
-    private String extractPlanId(String jsonResponse) {
+    private String extractId(String jsonResponse) {
         // crude parsing just to avoid bringing in a dependency
         int idIndex = jsonResponse.indexOf("\"id\"");
         if (idIndex == -1) return null;
