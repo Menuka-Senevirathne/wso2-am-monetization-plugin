@@ -4,6 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.apimgt.api.APIManagementException;
+import org.wso2.carbon.apimgt.api.model.APIIdentifier;
 import org.wso2.carbon.apimgt.api.model.policy.SubscriptionPolicy;
 import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
 import org.wso2.carbon.apimgt.impl.utils.APIMgtDBUtil;
@@ -162,4 +163,99 @@ public class MonetizationDAO {
             APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
         }
     }
+
+    public void addSubscription(APIIdentifier identifier, int applicationId, int tenantId, String customerId,
+                                  String subscriptionId, String apiUuid) throws StripeMonetizationException {
+
+        Connection conn = null;
+        ResultSet rs = null;
+        PreparedStatement ps = null;
+        try {
+            conn = APIMgtDBUtil.getConnection();
+            conn.setAutoCommit(false);
+            String query = StripeMonetizationConstants.INSERT_SUBSCRIPTION_DATA_SQL;
+            ps = conn.prepareStatement(query);
+            ps.setString(1, apiUuid);
+            ps.setInt(2, applicationId);
+            ps.setInt(3, tenantId);
+            ps.setString(4, customerId);
+            ps.setString(5, subscriptionId);
+            ps.executeUpdate();
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ex) {
+                    log.error("Error while rolling back the failed operation", ex);
+                }
+            }
+            String errorMessage = "Failed to add Stripe subscription info for API : " + identifier.getApiName() + " by"
+                    + " Application : " + applicationId;
+            log.error(errorMessage);
+            throw new StripeMonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(ps, conn, rs);
+        }
+    }
+
+    public String getSubscriptionUUID(int subscriptionId) throws StripeMonetizationException {
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        String subscriptionUUID = null;
+        try {
+            conn = APIMgtDBUtil.getConnection();
+            conn.setAutoCommit(false);
+            ps = conn.prepareStatement(StripeMonetizationConstants.GET_SUBSCRIPTION_UUID);
+            ps.setInt(1, subscriptionId);
+            rs = ps.executeQuery();
+            while (rs.next()) {
+                subscriptionUUID = rs.getString("UUID");
+            }
+        } catch (SQLException e) {
+            String errorMessage = "Error while getting UUID of subscription ID : " + subscriptionId;
+            log.error(errorMessage);
+            throw new StripeMonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(ps, conn, rs);
+        }
+        return subscriptionUUID;
+    }
+
+    public MonetizedStripeSubscriptionInfo getMonetizedSubscription(int apiId, int applicationId)
+            throws StripeMonetizationException {
+
+        MonetizedStripeSubscriptionInfo subscription = null;
+        Connection connection = null;
+        PreparedStatement statement = null;
+        ResultSet rs = null;
+
+        try {
+            connection = APIMgtDBUtil.getConnection();
+            connection.setAutoCommit(false);
+            statement = connection.prepareStatement(
+                    StripeMonetizationConstants.GET_BILLING_ENGINE_SUBSCRIPTION_ID);
+            statement.setInt(1, applicationId);
+            statement.setInt(2, apiId);
+
+            rs = statement.executeQuery();
+            if (rs.next()) {
+                String subscriptionId = rs.getString("SUBSCRIPTION_ID");
+                String customerId = rs.getString("CUSTOMER_ID");
+                subscription = new MonetizedStripeSubscriptionInfo(subscriptionId, customerId);
+            }
+            connection.commit();
+        } catch (SQLException e) {
+            String errorMessage = "Failed to get billing engine subscription for API : " + apiId +
+                    " and application ID : " + applicationId;
+            log.error(errorMessage, e);
+            throw new StripeMonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(statement, connection, rs);
+        }
+        return subscription;
+    }
+
 }

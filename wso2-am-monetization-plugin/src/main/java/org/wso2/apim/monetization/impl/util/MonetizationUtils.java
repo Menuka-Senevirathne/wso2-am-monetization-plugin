@@ -22,10 +22,10 @@ public class MonetizationUtils {
 
     private static final Log log = LogFactory.getLog(MonetizationUtils.class);
 
-    public static String getPlatformAccountKey(int tenantId) throws WorkflowException {
+    public static String getPlatformAccountKey(String tenantDomain) throws WorkflowException {
 
         String stripePlatformAccountKey = null;
-        String tenantDomain = APIUtil.getTenantDomainFromTenantId(tenantId);
+//        String tenantDomain = APIUtil.getTenantDomainFromTenantId(tenantId);
         try {
             //get the stripe key of platform account from  tenant conf json file
             JSONObject tenantConfig = APIUtil.getTenantConfig(tenantDomain);

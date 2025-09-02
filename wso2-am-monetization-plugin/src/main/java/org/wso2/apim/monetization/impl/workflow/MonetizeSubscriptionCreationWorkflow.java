@@ -197,7 +197,8 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
 
         SubscriptionWorkflowDTO subWorkFlowDTO = (SubscriptionWorkflowDTO) workflowDTO;
         String tenantDomain = workflowDTO.getTenantDomain();
-        int tenantId = subWorkFlowDTO.getTenantId();
+        APIIdentifier identifier = new APIIdentifier(subWorkFlowDTO.getApiProvider(), subWorkFlowDTO.getApiName(),
+                subWorkFlowDTO.getApiVersion());
 
         Customer customer;
         MoesifPlanInfo moesifPlanInfo;
@@ -207,7 +208,7 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
 
         try {
             // 1. Initialize Stripe API key for this tenant
-            Stripe.apiKey = MonetizationUtils.getPlatformAccountKey(tenantId);
+            Stripe.apiKey = MonetizationUtils.getPlatformAccountKey(tenantDomain);
 
             // 2. Get Moesif application key
             moesifApplicationKey = MonetizationUtils.getMoesifApplicationKey(tenantDomain);
@@ -230,6 +231,9 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
             // 6. Create subscription in Stripe
             subscriptionId = createMonetizedSubscriptions(priceId, customer);
             log.info("Created Stripe subscription [id: " + subscriptionId + "] for price [id: " + priceId + "]");
+
+            monetizationDAO.addSubscription(identifier, subWorkFlowDTO.getApplicationId(),subWorkFlowDTO.getTenantId(),
+                    customer.getId(), subscriptionId, api.getUuid());
 
             // 7. Create billing meter in Moesif
             createBillingMeterInMoesif(subscriptionId, moesifPlanInfo, moesifApplicationKey);
@@ -378,6 +382,7 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
                             .build()
                     ).build();
             Subscription subscription = Subscription.create(params);
+
             return subscription.getId();
         } catch (Exception e) {
             e.printStackTrace();

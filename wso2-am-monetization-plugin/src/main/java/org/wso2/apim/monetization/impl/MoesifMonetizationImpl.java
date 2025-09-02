@@ -2,6 +2,12 @@ package org.wso2.apim.monetization.impl;
 
 import com.moesif.api.MoesifAPIClient;
 import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Invoice;
+import com.stripe.model.Subscription;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.InvoiceCreatePreviewParams;
+import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -10,10 +16,7 @@ import org.wso2.apim.monetization.impl.util.MonetizationUtils;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.APIProvider;
 import org.wso2.carbon.apimgt.api.MonetizationException;
-import org.wso2.carbon.apimgt.api.model.API;
-import org.wso2.carbon.apimgt.api.model.Monetization;
-import org.wso2.carbon.apimgt.api.model.MonetizationUsagePublishInfo;
-import org.wso2.carbon.apimgt.api.model.Tier;
+import org.wso2.carbon.apimgt.api.model.*;
 import org.wso2.carbon.apimgt.api.model.policy.SubscriptionPolicy;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
@@ -23,6 +26,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.Gson;
 
 import com.moesif.*;
+import org.wso2.carbon.apimgt.impl.workflow.WorkflowException;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
 
 import java.io.IOException;
@@ -34,8 +38,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.HashMap;
-import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 
 public class MoesifMonetizationImpl implements Monetization {
@@ -199,13 +203,190 @@ public class MoesifMonetizationImpl implements Monetization {
     }
 
     @Override
-    public Map<String, String> getCurrentUsageForSubscription(String s, APIProvider apiProvider) throws MonetizationException {
-        return null;
+    public Map<String, String> getCurrentUsageForSubscription(String subscriptionUUID, APIProvider apiProvider) throws MonetizationException {
+
+        Map<String, String> billingEngineUsageData = new HashMap<String, String>();
+        String apiName = null;
+        try (Connection con = APIMgtDBUtil.getConnection()) {
+            SubscribedAPI subscribedAPI = ApiMgtDAO.getInstance().getSubscriptionByUUID(subscriptionUUID);
+            APIIdentifier apiIdentifier = subscribedAPI.getAPIIdentifier();
+            APIProductIdentifier apiProductIdentifier;
+            API api;
+            APIProduct apiProduct;
+            HashMap monetizationDataMap;
+            int apiId;
+            if (apiIdentifier != null) {
+                api = apiProvider.getAPIbyUUID(apiIdentifier.getUUID(), apiIdentifier.getOrganization());
+                apiName = apiIdentifier.getApiName();
+                if (api.getMonetizationProperties() == null) {
+                    String errorMessage = "Monetization properties are empty for : " + apiName;
+                    //throw MonetizationException as it will be logged and handled by the caller
+                    throw new MonetizationException(errorMessage);
+                }
+                monetizationDataMap = new Gson().fromJson(api.getMonetizationProperties().toString(), HashMap.class);
+                if (MapUtils.isEmpty(monetizationDataMap)) {
+                    String errorMessage = "Monetization data map is empty for : " + apiName;
+                    //throw MonetizationException as it will be logged and handled by the caller
+                    throw new MonetizationException(errorMessage);
+                }
+                apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
+            } else {
+                apiProductIdentifier = subscribedAPI.getProductId();
+                apiProduct = apiProvider.getAPIProduct(apiProductIdentifier);
+                apiName = apiProductIdentifier.getName();
+                if (apiProduct.getMonetizationProperties() == null) {
+                    String errorMessage = "Monetization properties are empty for : " + apiName;
+                    //throw MonetizationException as it will be logged and handled by the caller
+                    throw new MonetizationException(errorMessage);
+                }
+                monetizationDataMap = new Gson().fromJson(apiProduct.getMonetizationProperties().toString(),
+                        HashMap.class);
+                if (MapUtils.isEmpty(monetizationDataMap)) {
+                    String errorMessage = "Monetization data map is empty for : " + apiName;
+                    //throw MonetizationException as it will be logged and handled by the caller
+                    throw new MonetizationException(errorMessage);
+                }
+                apiId = ApiMgtDAO.getInstance().getAPIProductId(apiProductIdentifier);
+            }
+
+//            //get billing engine platform account key
+//            String platformAccountKey = MonetizationUtils.getPlatformAccountKey(tenantDomain);
+
+
+//            if (monetizationDataMap.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+//                String connectedAccountKey = monetizationDataMap.get
+//                        (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY).toString();
+//                if (StringUtils.isBlank(connectedAccountKey)) {
+//                    String errorMessage = "Connected account stripe key was not found for : " + apiName;
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+
+            String tenantDomain = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantDomain();
+            int applicationId = subscribedAPI.getApplication().getId();
+            //create request options to link with the connected account
+//            RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
+//            int applicationId = subscribedAPI.getApplication().getId();
+            MonetizedStripeSubscriptionInfo monetizedStripeSubscriptionInfo =
+                    monetizationDAO.getMonetizedSubscription(apiId, applicationId);
+//            String billingPlanSubscriptionId = stripeMonetizationDAO.getBillingEngineSubscriptionId(apiId,
+//                    applicationId);
+//            Subscription billingEngineSubscription = Subscription.retrieve(billingPlanSubscriptionId,
+//                    requestOptions);
+//            if (billingEngineSubscription == null) {
+//                String errorMessage = "No billing engine subscription was found for : " + apiName;
+//                //throw MonetizationException as it will be logged and handled by the caller
+//                throw new MonetizationException(errorMessage);
+//            }
+//            String usageType = billingEngineSubscription.getPlan().getUsageType();
+//            boolean dynamicUsage = StripeMonetizationConstants.METERED_USAGE.equalsIgnoreCase(usageType);
+//            boolean fixedRate = StripeMonetizationConstants.LICENSED_USAGE.equalsIgnoreCase(usageType);
+//            if (!dynamicUsage && !fixedRate) {
+//                String errorMsg = "Usage type should be set to 'metered' or 'licensed' to get the pending bill.";
+//                //throw MonetizationException as it will be logged and handled by the caller
+//                throw new MonetizationException(errorMsg);
+//            } catch (StripeException | APIManagementException | SQLException | WorkflowException ex) {
+//            throw new RuntimeException(ex);
+//        }
+//        Map<String, Object> invoiceParams = new HashMap<String, Object>();
+//            invoiceParams.put("subscription", billingEngineSubscription.getId());
+
+//                //fetch the upcoming invoice
+//                Invoice invoice = Invoice.upcoming(invoiceParams, requestOptions);
+
+            Stripe.apiKey = MonetizationUtils.getPlatformAccountKey(tenantDomain);
+            InvoiceCreatePreviewParams params =
+                    InvoiceCreatePreviewParams.builder()
+                            .setCustomer(monetizedStripeSubscriptionInfo.getCustomerId())
+                            .setSubscription(monetizedStripeSubscriptionInfo.getSubscriptionId())
+                            .build();
+
+            Invoice invoice = Invoice.createPreview(params);
+
+
+            if (invoice == null) {
+                String errorMessage = "No billing engine subscription was found for : " + apiName;
+                //throw MonetizationException as it will be logged and handled by the caller
+                throw new MonetizationException(errorMessage);
+            }
+            SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss z");
+            dateFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+            //the below parameters are billing engine specific
+            billingEngineUsageData.put("Description", invoice.getDescription());
+            billingEngineUsageData.put("Paid", invoice.getAmountPaid() != null ? invoice.getAmountPaid().toString() : null);
+//            billingEngineUsageData.put("Tax", invoice.getTa() != null ?
+//                    invoice.getTax().toString() : null);
+            billingEngineUsageData.put("Invoice ID", invoice.getId());
+            billingEngineUsageData.put("Account Name", invoice.getAccountName());
+            billingEngineUsageData.put("Next Payment Attempt", invoice.getNextPaymentAttempt() != null ?
+                    dateFormatter.format(new Date(invoice.getNextPaymentAttempt() * 1000)) : null);
+            billingEngineUsageData.put("Customer Email", invoice.getCustomerEmail());
+            billingEngineUsageData.put("Currency", invoice.getCurrency());
+            billingEngineUsageData.put("Account Country", invoice.getAccountCountry());
+            billingEngineUsageData.put("Amount Remaining", invoice.getAmountRemaining() != null ?
+                    Long.toString(invoice.getAmountRemaining() / 100L) : null);
+            billingEngineUsageData.put("Period End", invoice.getPeriodEnd() != null ?
+                    dateFormatter.format(new Date(invoice.getPeriodEnd() * 1000)) : null);
+            billingEngineUsageData.put("Due Date", invoice.getDueDate() != null ?
+                    dateFormatter.format(new Date(invoice.getDueDate())) : null);
+            billingEngineUsageData.put("Amount Due", invoice.getAmountDue() != null ?
+                    Long.toString(invoice.getAmountDue() / 100L) : null);
+            billingEngineUsageData.put("Total Tax Amounts", invoice.getTotalTaxes() != null ?
+                    invoice.getTotalTaxes().toString() : null);
+            billingEngineUsageData.put("Amount Paid", invoice.getAmountPaid() != null ?
+                    Long.toString(invoice.getAmountPaid() / 100L) : null);
+            billingEngineUsageData.put("Subtotal", invoice.getSubtotal() != null ?
+                    Long.toString(invoice.getSubtotal() / 100L) : null);
+            billingEngineUsageData.put("Total", invoice.getTotal() != null ?
+                    Long.toString(invoice.getTotal() / 100L) : null);
+            billingEngineUsageData.put("Period Start", invoice.getPeriodStart() != null ?
+                    dateFormatter.format(new Date(invoice.getPeriodStart() * 1000)) : null);
+
+
+        } catch (StripeException e) {
+            String errorMessage = "Error while fetching billing engine usage data for : " + apiName;
+            //throw MonetizationException as it will be logged and handled by the caller
+            throw new MonetizationException(errorMessage, e);
+        } catch (APIManagementException e) {
+            String errorMessage = "Failed to get subscription details of : " + apiName;
+            //throw MonetizationException as it will be logged and handled by the caller
+            throw new MonetizationException(errorMessage, e);
+        } catch (SQLException e) {
+            String errorMessage = "Error while retrieving the API ID";
+            throw new MonetizationException(errorMessage, e);
+        } catch (WorkflowException | StripeMonetizationException e) {
+            throw new RuntimeException(e);
+        }
+        return billingEngineUsageData;
     }
 
     @Override
     public Map<String, String> getTotalRevenue(API api, APIProvider apiProvider) throws MonetizationException {
-        return null;
+        APIIdentifier apiIdentifier = api.getId();
+        Map<String, String> revenueData = new HashMap<String, String>();
+        try {
+            //get all subscriptions for the API
+            List<SubscribedAPI> apiUsages = apiProvider.getAPIUsageByAPIId(api.getUuid(),
+                    api.getId().getOrganization());
+            for (SubscribedAPI subscribedAPI : apiUsages) {
+                //get subscription UUID for each subscription
+                int subscriptionId = subscribedAPI.getSubscriptionId();
+               String subscriptionUUID = monetizationDAO.getSubscriptionUUID(subscriptionId);
+//                String subscriptionUUID = "26135517-d598-4739-abf2-2384e2935611";
+                //get revenue for each subscription and add them
+                Map<String, String> billingEngineUsageData = getCurrentUsageForSubscription(subscriptionUUID,
+                        apiProvider);
+                revenueData.put("Revenue for subscription ID : " + subscriptionId,
+                        billingEngineUsageData.get("amount_due"));
+            }
+        } catch (APIManagementException e) {
+            String errorMessage = "Failed to get subscriptions of : " + apiIdentifier.getApiName();
+            //throw MonetizationException as it will be logged and handled by the caller
+            throw new MonetizationException(errorMessage, e);
+        } catch (StripeMonetizationException e) {
+            throw new RuntimeException(e);
+        }
+        return revenueData;
     }
 
     @Override
