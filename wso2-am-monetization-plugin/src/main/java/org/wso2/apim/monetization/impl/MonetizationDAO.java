@@ -1,6 +1,8 @@
 package org.wso2.apim.monetization.impl;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.model.policy.SubscriptionPolicy;
 import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
@@ -16,7 +18,7 @@ import static org.apache.commons.io.filefilter.TrueFileFilter.INSTANCE;
 
 public class MonetizationDAO {
     private static MonetizationDAO INSTANCE = null;
-
+    private static final Log log = LogFactory.getLog(MonetizationDAO.class);
     private ApiMgtDAO apiMgtDAO = ApiMgtDAO.getInstance();
 
     public static MonetizationDAO getInstance() {
@@ -26,7 +28,7 @@ public class MonetizationDAO {
         return INSTANCE;
     }
 
-    public void addMonetizationData(int apiId, String planId, String planName, Map<String, String> tierPlanMap) {
+    public void addMonetizationData(int apiId, String planId, String planName, Map<String, String> tierPlanMap) throws MoesifMonetizationException {
 
         PreparedStatement preparedStatement = null;
         Connection connection = null;
@@ -55,8 +57,8 @@ public class MonetizationDAO {
                 }
             } catch (SQLException ex) {
                 String errorMessage = "Failed to rollback add monetization data for API : " + apiId;
-//                log.error(errorMessage, e);
-//                throw new MoesifMonetizationException(errorMessage, e);
+                log.error(errorMessage, e);
+                throw new MoesifMonetizationException(errorMessage, e);
             } finally {
                 APIMgtDBUtil.setAutoCommit(connection, initialAutoCommit);
             }
@@ -65,7 +67,7 @@ public class MonetizationDAO {
         }
     }
 
-    public String getPriceIdForTier(int apiID, String tierName)  {
+    public String getPriceIdForTier(int apiID, String tierName) {
 
         Connection connection = null;
         PreparedStatement statement = null;
@@ -90,6 +92,7 @@ public class MonetizationDAO {
         }
         return priceId;
     }
+
     public MoesifPlanInfo getPlanInfoForTier(int apiID, String tierName) {
         Connection connection = null;
         PreparedStatement statement = null;
@@ -122,8 +125,7 @@ public class MonetizationDAO {
     }
 
 
-    public void addMonetizationPlanData(SubscriptionPolicy policy, String planId, String planName, String priceId)
-    {
+    public void addMonetizationPlanData(SubscriptionPolicy policy, String planId, String planName, String priceId) {
 
         Connection conn = null;
         PreparedStatement policyStatement = null;
