@@ -3,12 +3,18 @@ package org.wso2.apim.monetization.impl.util;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.util.EntityUtils;
 import org.json.simple.JSONObject;
 import org.wso2.apim.monetization.impl.MoesifMonetizationConstants;
 import org.wso2.apim.monetization.impl.MoesifMonetizationException;
 import org.wso2.apim.monetization.impl.Provider;
 import org.wso2.apim.monetization.impl.StripeMonetizationConstants;
 import org.wso2.carbon.apimgt.api.APIManagementException;
+import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.utils.APIUtil;
 import org.wso2.carbon.apimgt.impl.workflow.WorkflowException;
 
@@ -105,11 +111,34 @@ public class MonetizationUtils {
         return response.toString();
     }
 
-    public static String getBillingPlansUrl(Provider provider) {
-        return String.format(MoesifMonetizationConstants.BILLING_PLANS_URL, provider.getValue());
+
+    public static String invokeService(String url, String payload, String token) throws IOException, APIManagementException {
+        HttpClient httpClient = APIUtil.getHttpClient(url); // keep pooled client
+
+        HttpPost post = new HttpPost(url);
+        post.setHeader(APIConstants.HEADER_CONTENT_TYPE, APIConstants.APPLICATION_JSON_MEDIA_TYPE);
+        post.setHeader(APIConstants.HEADER_ACCEPT, APIConstants.APPLICATION_JSON_MEDIA_TYPE);
+        if (token != null && !token.isEmpty()) {
+            post.setHeader("Authorization", "Bearer " + token);
+        }
+
+        if (payload != null) {
+            post.setEntity(new StringEntity(payload, "UTF-8"));
+        }
+
+        try (CloseableHttpResponse response = (CloseableHttpResponse) httpClient.execute(post)) {
+            int statusCode = response.getStatusLine().getStatusCode();
+            String responseBody = EntityUtils.toString(response.getEntity(), "UTF-8");
+
+            if (statusCode >= 200 && statusCode < 300) {
+                return responseBody;
+            } else {
+                throw new APIManagementException("Moesif call failed [" + statusCode + "] " + responseBody);
+            }
+        }
     }
 
-    public static String constructProviderURL(String URL,Provider provider) {
+    public static String constructProviderURL(String URL, Provider provider) {
         return String.format(URL, provider.getValue());
     }
 }

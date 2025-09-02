@@ -1,17 +1,13 @@
 package org.wso2.apim.monetization.impl;
 
-import com.moesif.api.MoesifAPIClient;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Invoice;
-import com.stripe.model.Subscription;
-import com.stripe.net.RequestOptions;
 import com.stripe.param.InvoiceCreatePreviewParams;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.json.simple.JSONObject;
 import org.wso2.apim.monetization.impl.util.MonetizationUtils;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.APIProvider;
@@ -21,21 +17,11 @@ import org.wso2.carbon.apimgt.api.model.policy.SubscriptionPolicy;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
 import org.wso2.carbon.apimgt.impl.utils.APIMgtDBUtil;
-import org.wso2.carbon.apimgt.impl.utils.APIUtil;
 import com.google.gson.JsonObject;
 import com.google.gson.Gson;
 
-import com.moesif.*;
 import org.wso2.carbon.apimgt.impl.workflow.WorkflowException;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.ProtocolException;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
@@ -68,118 +54,56 @@ public class MoesifMonetizationImpl implements Monetization {
         // Retrieve Moesif application key
         String moesifApplicationKey = MonetizationUtils.getMoesifApplicationKey(tenantDomain);
 
-        //Create product resembles the API
-
+        //Create product resembles to an API in APIM
         try {
-            //read tenant conf and get application account key
-//            Moesif_Application_Key = MonetizationUtils.getMoesifApplicationKey(tenantDomain);
-////            String apiUrl = "https://api.moesif.com/v1/~/billing/catalog/plans?provider=stripe";
-//
-//            String createBillingPlanURL = MonetizationUtils.constructProviderURL
-//                    (MoesifMonetizationConstants.BILLING_PLANS_URL, Provider.STRIPE);
-//
             String apiName = api.getId().getApiName();
             String apiVersion = api.getId().getVersion();
             String apiProvider = api.getId().getProviderName();
-
             String moesifPlanName = apiName + "-" + apiVersion + "-" + apiProvider;
-//
-//            // JSON body
-//            JsonObject createPlanPayload = new JsonObject();
-//            createPlanPayload.addProperty("name", moesifPlanName);
-//            createPlanPayload.addProperty("status", MoesifMonetizationConstants.BILLING_PLAN_STATUS_ACTIVE);
-//            createPlanPayload.addProperty("provider", Provider.STRIPE.getValue());
-//
-////            createPlanPayload.addProperty("billing_type", "continuous_reporting");
-////            createPlanPayload.addProperty("reporting_period", "5m");
-//
-//            // Send request
-//            String planResponse = MonetizationUtils.
-//                    sendPostRequest(createBillingPlanURL, createPlanPayload.toString(), Moesif_Application_Key);
-//            log.info("Plan Response: " + planResponse);
-
 
             String moesifPlanResponse = createMoesifPlan(api, moesifApplicationKey, moesifPlanName);
 
             // Extract plan_id from response (assuming JSON like { "id": "prod_xxx", ... })
             String planId = extractId(moesifPlanResponse);
-//            if (planId == null) {
-//                throw new MonetizationException("Failed to extract plan_id from Moesif response");
-//            }
 
-//            String priceApiUrl = "https://api.moesif.com/v1/~/billing/catalog/prices?provider=stripe";
+            if (StringUtils.isNotBlank(planId)) {
 
-            String createPriceUrl = MonetizationUtils.constructProviderURL
-                    (MoesifMonetizationConstants.BILLING_PRICE_URL, Provider.STRIPE);
+                Map<String, String> tierPlanMap = new HashMap<String, String>();
+                //scan for commercial tiers and add price to the above created plan
+                for (Tier currentTier : api.getAvailableTiers()) {
+                    if (APIConstants.COMMERCIAL_TIER_PLAN.equalsIgnoreCase(currentTier.getTierPlan())) {
+                        if (StringUtils.isNotBlank(planId)) {
+                            log.info("Current Tier " + currentTier);
+                            String priceResponse = createMoesifPrice(currentTier, planId, moesifApplicationKey, moesifPlanName);
+                            log.info("Price Response: " + priceResponse);
 
-            Map<String, String> tierPlanMap = new HashMap<String, String>();
-            //scan for commercial tiers and add price to the above created plan
-            for (Tier currentTier : api.getAvailableTiers()) {
-                if (APIConstants.COMMERCIAL_TIER_PLAN.equalsIgnoreCase(currentTier.getTierPlan())) {
-                    if (StringUtils.isNotBlank(planId)) {
-//                        log.info("Current Tier " + currentTier);
-//
-//                        JsonObject createPricePayload = new JsonObject();
-//                        createPricePayload.addProperty("name", currentTier.getName());
-//                        createPricePayload.addProperty("provider", Provider.STRIPE.getValue());
-//                        createPricePayload.addProperty("plan_id", planId);
-//                        createPricePayload.addProperty("status", MoesifMonetizationConstants.BILLING_PRICE_STATUS_ACTIVE);
-//
-//                        if (!currentTier.getMonetizationAttributes().get("pricePerRequest").isEmpty()) {
-//                            createPricePayload.addProperty("pricing_model", MoesifPricingModel.PER_UNIT.getValue());
-//                            createPricePayload.addProperty("price_in_decimal", currentTier.getMonetizationAttributes().get("pricePerRequest"));
-//
-//                            //Create new billing meter for the new Product and Price
-//                            JsonObject billingMeterPayload = new JsonObject();
-//                            billingMeterPayload.addProperty("display_name", currentTier.getName() + " Meter");
-//                            billingMeterPayload.addProperty("event_name", moesifPlanName + " Event");
-//                            createPricePayload.add("price_meter", billingMeterPayload);
-//
-//                        } else if (!currentTier.getMonetizationAttributes().get("fixedPrice").isEmpty()) {
-//                            createPricePayload.addProperty("pricing_model", MoesifPricingModel.FLAT_RATE.getValue());
-//                            createPricePayload.addProperty("price_in_decimal", currentTier.getMonetizationAttributes().get("fixedPrice"));
-//                            //This has to be further evaluated and attach a governance rule accordingly
-//                            createPricePayload.addProperty("usage_aggregator", "");
-//
-//                        }
-////                        createPricePayload.addProperty("usage_aggregator", "sum");
-////                        createPricePayload.add("currency_prices", currencyPrices);
-//
-//                        //To_DO get these values from the UI
-//                        createPricePayload.addProperty("period", 1);
-//                        createPricePayload.addProperty("period_units", "M");
-//                        createPricePayload.addProperty("currency", currentTier.getMonetizationAttributes().get("currencyType"));
-//
-//                        String priceResponse = MonetizationUtils.
-//                                sendPostRequest(createPriceUrl, createPricePayload.toString(), moesifApplicationKey);
-
-                        String priceResponse = createMoesifPrice(currentTier, planId, moesifApplicationKey, moesifPlanName);
-                        log.info("Price Response: " + priceResponse);
-
-                        if (StringUtils.isNotBlank(priceResponse)) {
-                            String priceId = extractId(priceResponse);
-                            if (StringUtils.isNotBlank(priceId)) {
-                                tierPlanMap.put(currentTier.getName(), priceId);
-                                log.info("Monetization is enabled for the API: " + api.getId() +
-                                        " with Tier: " + currentTier.getName() + " and Moesif Price ID: " + priceId);
-                            } else {
-                                String errorMessage = "Failed to extract price_id from Moesif response";
-                                throw new MonetizationException(errorMessage);
+                            if (StringUtils.isNotBlank(priceResponse)) {
+                                String priceId = extractId(priceResponse);
+                                if (StringUtils.isNotBlank(priceId)) {
+                                    tierPlanMap.put(currentTier.getName(), priceId);
+                                    log.info("Monetization is enabled for the API: " + api.getId() +
+                                            " with Tier: " + currentTier.getName() + " and Moesif Price ID: " + priceId);
+                                } else {
+                                    String errorMessage = "Failed to extract price_id from Moesif response";
+                                    throw new MonetizationException(errorMessage);
+                                }
                             }
-                        }
-                        try (Connection con = APIMgtDBUtil.getConnection()) {
-                            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
-                            monetizationDAO.addMonetizationData(apiId, planId, moesifPlanName, tierPlanMap);
-                        } catch (Exception e) {
-                            String errorMessage = String.format(
-                                    "Failed to persist monetization data for API [uuid: %s, planId: %s]",
-                                    api.getUuid(), planId);
-                            log.error(errorMessage, e);
-                            throw new MoesifMonetizationException(errorMessage, e);
-                        }
+                            try (Connection con = APIMgtDBUtil.getConnection()) {
+                                int apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
+                                monetizationDAO.addMonetizationData(apiId, planId, moesifPlanName, tierPlanMap);
+                            } catch (Exception e) {
+                                String errorMessage = String.format(
+                                        "Failed to persist monetization data for API [uuid: %s, planId: %s]",
+                                        api.getUuid(), planId);
+                                log.error(errorMessage, e);
+                                throw new MoesifMonetizationException(errorMessage, e);
+                            }
 
+                        }
                     }
                 }
+            } else {
+                throw new MonetizationException("Plan ID " + planId + " not yet available in Moesif");
             }
 
         } catch (MoesifMonetizationException e) {
@@ -249,50 +173,11 @@ public class MoesifMonetizationImpl implements Monetization {
                 apiId = ApiMgtDAO.getInstance().getAPIProductId(apiProductIdentifier);
             }
 
-//            //get billing engine platform account key
-//            String platformAccountKey = MonetizationUtils.getPlatformAccountKey(tenantDomain);
-
-
-//            if (monetizationDataMap.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-//                String connectedAccountKey = monetizationDataMap.get
-//                        (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY).toString();
-//                if (StringUtils.isBlank(connectedAccountKey)) {
-//                    String errorMessage = "Connected account stripe key was not found for : " + apiName;
-//                    //throw MonetizationException as it will be logged and handled by the caller
-//                    throw new MonetizationException(errorMessage);
-//                }
-
             String tenantDomain = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantDomain();
             int applicationId = subscribedAPI.getApplication().getId();
-            //create request options to link with the connected account
-//            RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
-//            int applicationId = subscribedAPI.getApplication().getId();
+
             MonetizedStripeSubscriptionInfo monetizedStripeSubscriptionInfo =
                     monetizationDAO.getMonetizedSubscription(apiId, applicationId);
-//            String billingPlanSubscriptionId = stripeMonetizationDAO.getBillingEngineSubscriptionId(apiId,
-//                    applicationId);
-//            Subscription billingEngineSubscription = Subscription.retrieve(billingPlanSubscriptionId,
-//                    requestOptions);
-//            if (billingEngineSubscription == null) {
-//                String errorMessage = "No billing engine subscription was found for : " + apiName;
-//                //throw MonetizationException as it will be logged and handled by the caller
-//                throw new MonetizationException(errorMessage);
-//            }
-//            String usageType = billingEngineSubscription.getPlan().getUsageType();
-//            boolean dynamicUsage = StripeMonetizationConstants.METERED_USAGE.equalsIgnoreCase(usageType);
-//            boolean fixedRate = StripeMonetizationConstants.LICENSED_USAGE.equalsIgnoreCase(usageType);
-//            if (!dynamicUsage && !fixedRate) {
-//                String errorMsg = "Usage type should be set to 'metered' or 'licensed' to get the pending bill.";
-//                //throw MonetizationException as it will be logged and handled by the caller
-//                throw new MonetizationException(errorMsg);
-//            } catch (StripeException | APIManagementException | SQLException | WorkflowException ex) {
-//            throw new RuntimeException(ex);
-//        }
-//        Map<String, Object> invoiceParams = new HashMap<String, Object>();
-//            invoiceParams.put("subscription", billingEngineSubscription.getId());
-
-//                //fetch the upcoming invoice
-//                Invoice invoice = Invoice.upcoming(invoiceParams, requestOptions);
 
             Stripe.apiKey = MonetizationUtils.getPlatformAccountKey(tenantDomain);
             InvoiceCreatePreviewParams params =
@@ -371,7 +256,7 @@ public class MoesifMonetizationImpl implements Monetization {
             for (SubscribedAPI subscribedAPI : apiUsages) {
                 //get subscription UUID for each subscription
                 int subscriptionId = subscribedAPI.getSubscriptionId();
-               String subscriptionUUID = monetizationDAO.getSubscriptionUUID(subscriptionId);
+                String subscriptionUUID = monetizationDAO.getSubscriptionUUID(subscriptionId);
 //                String subscriptionUUID = "26135517-d598-4739-abf2-2384e2935611";
                 //get revenue for each subscription and add them
                 Map<String, String> billingEngineUsageData = getCurrentUsageForSubscription(subscriptionUUID,
@@ -414,7 +299,7 @@ public class MoesifMonetizationImpl implements Monetization {
      *
      * @param api The API object for which the billing plan should be created.
      * @return The response from Moesif API after creating the billing plan.
-     * @throws MonetizationException if any error occurs while creating the plan.
+     * @throws MoesifMonetizationException if any error occurs while creating the plan.
      */
     private String createMoesifPlan(API api, String moesifApplicationKey, String moesifPlanName) throws MoesifMonetizationException {
 
@@ -433,9 +318,8 @@ public class MoesifMonetizationImpl implements Monetization {
             createPlanPayload.addProperty("status", MoesifMonetizationConstants.BILLING_PLAN_STATUS_ACTIVE);
             createPlanPayload.addProperty("provider", Provider.STRIPE.getValue());
 
-            // Send POST request to Moesif
-            planResponse = MonetizationUtils.sendPostRequest(
-                    createBillingPlanURL, createPlanPayload.toString(), moesifApplicationKey);
+            planResponse = MonetizationUtils.invokeService(createBillingPlanURL, createPlanPayload.toString(),
+                    moesifApplicationKey);
 
             if (log.isDebugEnabled()) {
                 log.debug("Plan creation payload: " + createPlanPayload);
@@ -512,8 +396,7 @@ public class MoesifMonetizationImpl implements Monetization {
             createPricePayload.addProperty("currency",
                     currentTier.getMonetizationAttributes().get("currencyType"));
 
-            // Send POST request to Moesif
-            priceResponse = MonetizationUtils.sendPostRequest(
+         priceResponse = MonetizationUtils.invokeService(
                     createPriceUrl, createPricePayload.toString(), moesifApplicationKey);
 
             if (log.isDebugEnabled()) {
