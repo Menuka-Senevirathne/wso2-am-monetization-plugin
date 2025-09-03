@@ -146,8 +146,17 @@ public class MoesifMonetizationImpl implements Monetization {
     }
 
 
+    /**
+     * Fetches the current usage details for a given subscription from the billing engine.
+     *
+     * @param subscriptionUUID The UUID of the subscription for which to fetch usage details.
+     * @param apiProvider      The APIProvider instance to retrieve API and subscription details.
+     * @return A map containing usage details fetched from the billing engine.
+     * @throws MonetizationException if any error occurs while fetching usage details.
+     */
     @Override
-    public Map<String, String> getCurrentUsageForSubscription(String subscriptionUUID, APIProvider apiProvider) throws MonetizationException {
+    public Map<String, String> getCurrentUsageForSubscription(String subscriptionUUID, APIProvider apiProvider)
+            throws MonetizationException {
 
         Map<String, String> billingEngineUsageData = new HashMap<String, String>();
         String apiName = null;
@@ -277,8 +286,6 @@ public class MoesifMonetizationImpl implements Monetization {
                 //get subscription UUID for each subscription
                 int subscriptionId = subscribedAPI.getSubscriptionId();
                 String subscriptionUUID = monetizationDAO.getSubscriptionUUID(subscriptionId);
-//                String subscriptionUUID = "26135517-d598-4739-abf2-2384e2935611";
-                //get revenue for each subscription and add them
                 Map<String, String> billingEngineUsageData = getCurrentUsageForSubscription(subscriptionUUID,
                         apiProvider);
                 revenueData.put("Revenue for subscription ID : " + subscriptionId,
@@ -398,7 +405,7 @@ public class MoesifMonetizationImpl implements Monetization {
                 billingMeterPayload.addProperty("event_name", moesifPlanName + " Event");
                 createPricePayload.add("price_meter", billingMeterPayload);
 
-            //Todo: The floe for the fixed price tier should be implemented and tested
+                //Todo: The flow for the fixed price tier should be implemented and tested
             } else if (fixedPrice != null && !fixedPrice.isEmpty()) {
                 // Flat-rate pricing model
                 createPricePayload.addProperty("pricing_model", MoesifPricingModel.FLAT_RATE.getValue());
@@ -410,6 +417,7 @@ public class MoesifMonetizationImpl implements Monetization {
 
             //Todo: period and period_units should be handled dynamically,
             // the possible set of values are not available in the Moesif openAPI spec
+            // once identified the 'billingCycle' can be used and reformat to match the expected format of Moesif
             createPricePayload.addProperty("period", 1);
             createPricePayload.addProperty("period_units", "M");
             createPricePayload.addProperty("currency",
