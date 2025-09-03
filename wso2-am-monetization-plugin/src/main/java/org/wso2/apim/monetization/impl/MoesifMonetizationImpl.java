@@ -1,5 +1,6 @@
 package org.wso2.apim.monetization.impl;
 
+import com.google.gson.JsonParser;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Invoice;
@@ -59,16 +60,15 @@ public class MoesifMonetizationImpl implements Monetization {
         // Retrieve Moesif application key
         String moesifApplicationKey = MonetizationUtils.getMoesifApplicationKey(tenantDomain);
 
-        //Create product resembles to an API in APIM
         try {
             String apiName = api.getId().getApiName();
             String apiVersion = api.getId().getVersion();
             String apiProvider = api.getId().getProviderName();
             String moesifPlanName = apiName + "-" + apiVersion + "-" + apiProvider;
 
+            //creating a plan in Moesif which resembles the API in APIM
             String moesifPlanResponse = createMoesifPlan(api, moesifApplicationKey, moesifPlanName);
 
-            // Extract plan_id from response (assuming JSON like { "id": "prod_xxx", ... })
             String planId = extractId(moesifPlanResponse);
 
             if (StringUtils.isNotBlank(planId)) {
@@ -79,6 +79,8 @@ public class MoesifMonetizationImpl implements Monetization {
                     if (APIConstants.COMMERCIAL_TIER_PLAN.equalsIgnoreCase(currentTier.getTierPlan())) {
                         if (StringUtils.isNotBlank(planId)) {
                             log.info("Current Tier " + currentTier);
+
+                            //Create a price in Moesif for commercial tier
                             String priceResponse = createMoesifPrice(currentTier, planId, moesifApplicationKey, moesifPlanName);
                             log.info("Price Response: " + priceResponse);
 
@@ -139,7 +141,7 @@ public class MoesifMonetizationImpl implements Monetization {
             throw new MonetizationException(errorMessage, e);
         } catch (SQLException e) {
             String errorMessage = "Error while retrieving the API ID";
-            throw new MonetizationException(errorMessage,e);
+            throw new MonetizationException(errorMessage, e);
         }
     }
 
@@ -296,18 +298,17 @@ public class MoesifMonetizationImpl implements Monetization {
     }
 
     /**
-     * Very basic extraction of "id" field from JSON response.
-     * In production, better to use a JSON library like Jackson/Gson.
+     * Extracts the "id" field from a JSON response string.
+     *
+     * @param jsonResponse The JSON response string from which to extract the ID.
+     * @return The extracted ID as a String, or null if not found.
      */
     private String extractId(String jsonResponse) {
-        // crude parsing just to avoid bringing in a dependency
-        int idIndex = jsonResponse.indexOf("\"id\"");
-        if (idIndex == -1) return null;
-        int colonIndex = jsonResponse.indexOf(":", idIndex);
-        int quoteStart = jsonResponse.indexOf("\"", colonIndex);
-        int quoteEnd = jsonResponse.indexOf("\"", quoteStart + 1);
-        if (quoteStart == -1 || quoteEnd == -1) return null;
-        return jsonResponse.substring(quoteStart + 1, quoteEnd);
+        JsonObject jsonObject = JsonParser.parseString(jsonResponse).getAsJsonObject();
+        if (jsonObject.has("id") && !jsonObject.get("id").isJsonNull()) {
+            return jsonObject.get("id").getAsString();
+        }
+        return null;
     }
 
     /**
@@ -397,6 +398,7 @@ public class MoesifMonetizationImpl implements Monetization {
                 billingMeterPayload.addProperty("event_name", moesifPlanName + " Event");
                 createPricePayload.add("price_meter", billingMeterPayload);
 
+            //Todo: The floe for the fixed price tier should be implemented and tested
             } else if (fixedPrice != null && !fixedPrice.isEmpty()) {
                 // Flat-rate pricing model
                 createPricePayload.addProperty("pricing_model", MoesifPricingModel.FLAT_RATE.getValue());
@@ -406,7 +408,8 @@ public class MoesifMonetizationImpl implements Monetization {
                 createPricePayload.addProperty("usage_aggregator", "");
             }
 
-            // Common fields
+            //Todo: period and period_units should be handled dynamically,
+            // the possible set of values are not available in the Moesif openAPI spec
             createPricePayload.addProperty("period", 1);
             createPricePayload.addProperty("period_units", "M");
             createPricePayload.addProperty("currency",
