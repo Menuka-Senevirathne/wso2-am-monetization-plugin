@@ -19,19 +19,21 @@ import org.wso2.carbon.apimgt.impl.utils.APIUtil;
 import org.wso2.carbon.apimgt.impl.workflow.WorkflowException;
 
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 
 public class MonetizationUtils {
 
     private static final Log log = LogFactory.getLog(MonetizationUtils.class);
 
+    /**
+     * Get the platform account key of the tenant
+     *
+     * @param tenantDomain tenant domain of the user
+     * @return platform account key
+     * @throws WorkflowException if failed to get the platform account key
+     */
     public static String getPlatformAccountKey(String tenantDomain) throws WorkflowException {
 
         String stripePlatformAccountKey = null;
-//        String tenantDomain = APIUtil.getTenantDomainFromTenantId(tenantId);
         try {
             //get the stripe key of platform account from  tenant conf json file
             JSONObject tenantConfig = APIUtil.getTenantConfig(tenantDomain);
@@ -55,6 +57,13 @@ public class MonetizationUtils {
         return stripePlatformAccountKey;
     }
 
+    /**
+     * Get the Moesif application key of the tenant
+     *
+     * @param tenantDomain tenant domain of the user
+     * @return Moesif application key
+     * @throws MoesifMonetizationException if failed to get the Moesif application key
+     */
     public static String getMoesifApplicationKey(String tenantDomain) throws MoesifMonetizationException {
 
         try {
@@ -82,36 +91,16 @@ public class MonetizationUtils {
         return StringUtils.EMPTY;
     }
 
-    public static String sendPostRequest(String apiUrl, String createPlanPayload, String token) throws IOException {
-        URL url = new URL(apiUrl);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setRequestProperty("Accept", "application/json");
-        conn.setRequestProperty("Authorization", "Bearer " + token);
-        conn.setDoOutput(true);
-
-        try (OutputStream os = conn.getOutputStream()) {
-            byte[] input = createPlanPayload.getBytes(StandardCharsets.UTF_8);
-            os.write(input, 0, input.length);
-        }
-
-        int responseCode = conn.getResponseCode();
-        StringBuilder response = new StringBuilder();
-        try (java.io.BufferedReader br = new java.io.BufferedReader(
-                new java.io.InputStreamReader(
-                        responseCode >= 200 && responseCode < 300 ? conn.getInputStream() : conn.getErrorStream(),
-                        StandardCharsets.UTF_8))) {
-            String responseLine;
-            while ((responseLine = br.readLine()) != null) {
-                response.append(responseLine.trim());
-            }
-        }
-        conn.disconnect();
-        return response.toString();
-    }
-
-
+    /**
+     * Invoke a REST API service
+     *
+     * @param url     URL of the service
+     * @param payload Payload to be sent to the service
+     * @param token   Bearer token if any
+     * @return Response of the service
+     * @throws IOException              if an I/O exception occurs
+     * @throws APIManagementException   if an error response is returned from the service
+     */
     public static String invokeService(String url, String payload, String token) throws IOException, APIManagementException {
         HttpClient httpClient = APIUtil.getHttpClient(url); // keep pooled client
 
@@ -138,6 +127,15 @@ public class MonetizationUtils {
         }
     }
 
+
+    /***
+     * Construct the URL according to the provider
+     *
+     *
+     * @param URL
+     * @param provider
+     * @return String formatted URL
+     */
     public static String constructProviderURL(String URL, Provider provider) {
         return String.format(URL, provider.getValue());
     }
