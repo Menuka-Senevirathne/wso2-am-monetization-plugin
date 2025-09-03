@@ -3,7 +3,6 @@ package org.wso2.apim.monetization.impl.workflow;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.stripe.Stripe;
-import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.Subscription;
 import com.stripe.param.CustomerCreateParams;
@@ -104,42 +103,35 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
         String subscriptionId;
 
         try {
-            // 1. Initialize Stripe API key for this tenant
             Stripe.apiKey = MonetizationUtils.getPlatformAccountKey(tenantDomain);
 
-            // 2. Get Moesif application key
             moesifApplicationKey = MonetizationUtils.getMoesifApplicationKey(tenantDomain);
 
-            // 3. Create customer in Stripe
+            // Create customer in Stripe
             customer = createStripeCustomer(workflowDTO);
             log.info("Created Stripe customer [id: " + customer.getId() + ", name: " + customer.getName() + "]");
 
-            // 4. Register user in Moesif
+            // Register user in Moesif
             createUserInMoesif(customer, moesifApplicationKey);
             log.info("Created Moesif user for Stripe customer [id: " + customer.getId() + "]");
 
-            // 5. Fetch monetization plan info from DB
+            // Fetch monetization plan info from DB
             try (Connection con = APIMgtDBUtil.getConnection()) {
                 int apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
                 moesifPlanInfo = monetizationDAO.getPlanInfoForTier(apiId, subWorkFlowDTO.getTierName());
                 priceId = moesifPlanInfo.getPriceId();
             }
 
-            // 6. Create subscription in Stripe
+            // Create subscription in Stripe
             subscriptionId = createMonetizedSubscriptions(priceId, customer);
             log.info("Created Stripe subscription [id: " + subscriptionId + "] for price [id: " + priceId + "]");
 
             monetizationDAO.addSubscription(identifier, subWorkFlowDTO.getApplicationId(), subWorkFlowDTO.getTenantId(),
                     customer.getId(), subscriptionId, api.getUuid());
 
-            // 7. Create billing meter in Moesif
+            // Create billing meter in Moesif
             createBillingMeterInMoesif(subscriptionId, moesifPlanInfo, moesifApplicationKey);
             log.info("Created Moesif billing meter for subscription [id: " + subscriptionId + "]");
-
-        } catch (StripeException e) {
-            String msg = "Error while interacting with Stripe during subscription monetization";
-            log.error(msg, e);
-            throw new WorkflowException(msg, e);
 
         } catch (SQLException | APIManagementException e) {
             String msg = "Error while accessing API management DB during subscription monetization";
@@ -162,7 +154,6 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
             throw new WorkflowException(msg, e);
         }
 
-        // 8. Continue workflow execution
         return execute(workflowDTO);
     }
 
@@ -171,9 +162,9 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
      *
      * @param workflowDTO The subscription workflow DTO containing subscriber details.
      * @return The created Stripe Customer object.
-     * @throws MoesifMonetizationException if customer creation fails.
+     * @throws StripeMonetizationException if customer creation fails.
      */
-    private Customer createStripeCustomer(WorkflowDTO workflowDTO) throws MoesifMonetizationException, StripeMonetizationException {
+    private Customer createStripeCustomer(WorkflowDTO workflowDTO) throws StripeMonetizationException {
         try {
             // Build customer creation parameters
             CustomerCreateParams params = CustomerCreateParams.builder()
@@ -214,13 +205,9 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
         try {
             // Build user creation payload
             JsonObject createUserPayload = new JsonObject();
-            createUserPayload.addProperty("user_id", customer.getName());   // external-facing ID
-            createUserPayload.addProperty("company_id", customer.getId());  // Stripe customer ID
+            createUserPayload.addProperty("user_id", customer.getName());
+            createUserPayload.addProperty("company_id", customer.getId());
             createUserPayload.addProperty("name", customer.getName());
-
-            // Send request to Moesif to create user
-//            String response = MonetizationUtils.sendPostRequest(
-//                    apiUrl, createUserPayload.toString(), moesifApplicationKey);
 
             String response = MonetizationUtils.invokeService(
                     MoesifMonetizationConstants.MOESIF_USER_URL, createUserPayload.toString(), moesifApplicationKey);
@@ -241,8 +228,15 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
     }
 
 
-    public String createMonetizedSubscriptions(String priceId,
-                                               Customer customer) throws WorkflowException, StripeException {
+    /**
+     * Creates a monetized subscription in Stripe for the given price and customer.
+     *
+     * @param priceId  The ID of the price to subscribe to.
+     * @param customer The Stripe customer object.
+     * @return The ID of the created subscription.
+     * @throws StripeMonetizationException if subscription creation fails.
+     */
+    public String createMonetizedSubscriptions(String priceId, Customer customer) throws StripeMonetizationException {
         try {
             SubscriptionCreateParams params = SubscriptionCreateParams.builder()
                     .setCustomer(customer.getId())
@@ -254,17 +248,29 @@ public class MonetizeSubscriptionCreationWorkflow extends WorkflowExecutor {
 
             return subscription.getId();
         } catch (Exception e) {
-            e.printStackTrace();
-            throw e;
+            String errorMessage = String.format(
+                    "Error while creating subscription for customer: " + customer.getId() + " and price: " + priceId);
+            ;
+            throw new StripeMonetizationException(errorMessage, e);
         }
     }
 
-    //create billing meter
+
+    /**
+     * Creates a billing meter in Moesif for the given subscription and plan info.
+     *
+     * @param subscriptionId The ID of the subscription.
+     * @param moesifPlanInfo The Moesif plan information.
+     * @param key            The Moesif application key for authentication.
+     * @throws IOException            if an I/O exception occurs.
+     * @throws APIManagementException if an error response is returned from the service.
+     */
     public void createBillingMeterInMoesif(String subscriptionId, MoesifPlanInfo moesifPlanInfo, String key)
             throws IOException, APIManagementException {
         JsonObject createBillingMeterPayload = new JsonObject();
 
-        // Root level
+        //ToDo: slug, url_query, and es_query should be dynamically generated based on the use case
+        // but the valid range of values should be identified first
         createBillingMeterPayload.addProperty("name", subscriptionId + "-billing-meter");
         createBillingMeterPayload.addProperty("slug", "hourly_usage");
         createBillingMeterPayload.addProperty("status", MoesifMonetizationConstants.BILLING_METER_STATUS_ACTIVE);

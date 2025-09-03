@@ -1,6 +1,8 @@
 package org.wso2.apim.monetization.impl;
 
-public class StripeMonetizationException extends Exception {
+import org.wso2.carbon.apimgt.api.MonetizationException;
+
+public class StripeMonetizationException extends MonetizationException {
 
     public StripeMonetizationException(String msg) {
         super(msg);
