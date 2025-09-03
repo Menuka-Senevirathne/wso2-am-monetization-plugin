@@ -2,8 +2,10 @@ package org.wso2.apim.monetization.impl;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.apim.monetization.impl.constants.DatabaseConstants;
 import org.wso2.apim.monetization.impl.constants.StripeMonetizationConstants;
 import org.wso2.apim.monetization.impl.model.MoesifPlanInfo;
+import org.wso2.apim.monetization.impl.model.MonetizedStripeSubscriptionInfo;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.MonetizationException;
 import org.wso2.carbon.apimgt.api.model.APIIdentifier;
@@ -29,7 +31,8 @@ public class MonetizationDAO {
         return INSTANCE;
     }
 
-    public void addMonetizationData(int apiId, String planId, String planName, Map<String, String> tierPlanMap) throws MoesifMonetizationException {
+    public void addMonetizationData(int apiId, String planId, String planName, Map<String, String> tierPlanMap)
+            throws  APIManagementException {
 
         PreparedStatement preparedStatement = null;
         Connection connection = null;
@@ -59,7 +62,7 @@ public class MonetizationDAO {
             } catch (SQLException ex) {
                 String errorMessage = "Failed to rollback add monetization data for API : " + apiId;
                 log.error(errorMessage, e);
-                throw new MoesifMonetizationException(errorMessage, e);
+                throw new APIManagementException(errorMessage, e);
             } finally {
                 APIMgtDBUtil.setAutoCommit(connection, initialAutoCommit);
             }
@@ -75,7 +78,7 @@ public class MonetizationDAO {
         try {
             connection = APIMgtDBUtil.getConnection();
             connection.setAutoCommit(false);
-            statement = connection.prepareStatement(StripeMonetizationConstants.GET_PLAN_INFO_FOR_API_AND_TIER);
+            statement = connection.prepareStatement(DatabaseConstants.GET_PLAN_INFO_FOR_API_AND_TIER);
             statement.setInt(1, apiID);
             statement.setString(2, tierName);
             ResultSet rs = statement.executeQuery();
@@ -108,7 +111,7 @@ public class MonetizationDAO {
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            String query = StripeMonetizationConstants.INSERT_SUBSCRIPTION_DATA_SQL;
+            String query = DatabaseConstants.INSERT_SUBSCRIPTION_DATA_SQL;
             ps = conn.prepareStatement(query);
             ps.setString(1, apiUuid);
             ps.setInt(2, applicationId);
@@ -143,7 +146,7 @@ public class MonetizationDAO {
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            ps = conn.prepareStatement(StripeMonetizationConstants.GET_SUBSCRIPTION_UUID);
+            ps = conn.prepareStatement(DatabaseConstants.GET_SUBSCRIPTION_UUID);
             ps.setInt(1, subscriptionId);
             rs = ps.executeQuery();
             while (rs.next()) {
@@ -171,7 +174,7 @@ public class MonetizationDAO {
             connection = APIMgtDBUtil.getConnection();
             connection.setAutoCommit(false);
             statement = connection.prepareStatement(
-                    StripeMonetizationConstants.GET_BILLING_ENGINE_SUBSCRIPTION_ID);
+                    DatabaseConstants.GET_BILLING_ENGINE_SUBSCRIPTION_ID);
             statement.setInt(1, applicationId);
             statement.setInt(2, apiId);
 
@@ -194,7 +197,7 @@ public class MonetizationDAO {
     }
 
 
-    public static Map<String, String> getTierToBillingEnginePlanMapping(int apiID)
+    public static Map<String, String> getTierToBillingPlanMapping(int apiID)
             throws MonetizationException {
 
         Map<String, String> moesifPlanTierMap = new HashMap<String, String>();
@@ -203,7 +206,7 @@ public class MonetizationDAO {
         try {
             connection = APIMgtDBUtil.getConnection();
             connection.setAutoCommit(false);
-            statement = connection.prepareStatement(StripeMonetizationConstants.GET_BILLING_PLANS_BY_PRODUCT);
+            statement = connection.prepareStatement(DatabaseConstants.GET_BILLING_PLANS_BY_API_ID);
             statement.setInt(1, apiID);
             ResultSet rs = statement.executeQuery();
             while (rs.next()) {

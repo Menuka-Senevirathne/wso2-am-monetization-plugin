@@ -1,4 +1,4 @@
-package org.wso2.apim.monetization.impl;
+package org.wso2.apim.monetization.impl.model;
 
 public class MonetizedStripeSubscriptionInfo {
     private String subscriptionId;

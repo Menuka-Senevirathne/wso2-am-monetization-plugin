@@ -1,4 +1,4 @@
-package org.wso2.apim.monetization.impl.model;
+package org.wso2.apim.monetization.impl.enums;
 
 public enum MoesifPricingModel {
 

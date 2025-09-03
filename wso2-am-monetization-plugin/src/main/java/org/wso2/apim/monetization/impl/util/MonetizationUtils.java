@@ -11,7 +11,7 @@ import org.apache.http.util.EntityUtils;
 import org.json.simple.JSONObject;
 import org.wso2.apim.monetization.impl.constants.MoesifMonetizationConstants;
 import org.wso2.apim.monetization.impl.MoesifMonetizationException;
-import org.wso2.apim.monetization.impl.Provider;
+import org.wso2.apim.monetization.impl.enums.Provider;
 import org.wso2.apim.monetization.impl.constants.StripeMonetizationConstants;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.impl.APIConstants;
