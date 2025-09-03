@@ -1,4 +1,4 @@
-package org.wso2.apim.monetization.impl;
+package org.wso2.apim.monetization.impl.constants;
 
 public class MoesifMonetizationConstants {
     public static final String MONETIZATION_INFO = "MonetizationInfo";

@@ -8,6 +8,8 @@ import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.apim.monetization.impl.constants.MoesifMonetizationConstants;
+import org.wso2.apim.monetization.impl.model.MoesifPricingModel;
 import org.wso2.apim.monetization.impl.util.MonetizationUtils;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.APIProvider;
@@ -22,6 +24,7 @@ import com.google.gson.Gson;
 
 import org.wso2.carbon.apimgt.impl.workflow.WorkflowException;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
@@ -123,8 +126,29 @@ public class MoesifMonetizationImpl implements Monetization {
 
     @Override
     public Map<String, String> getMonetizedPoliciesToPlanMapping(API api) throws MonetizationException {
-        return null;
+
+        try (Connection con = APIMgtDBUtil.getConnection()) {
+            String apiName = api.getId().getApiName();
+            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getUuid(), con);
+//                //get billing engine product ID for that API
+//                String billingProductIdForApi = getBillingProductIdForApi(apiId);
+//                if (StringUtils.isEmpty(billingProductIdForApi)) {
+//                    log.info("No product was found in billing engine for  : " + apiName);
+//                    return new HashMap<String, String>();
+//                }
+            //get tier to billing engine plan mapping
+            return MonetizationDAO.getTierToBillingEnginePlanMapping(apiId);
+        } catch (APIManagementException e) {
+            String errorMessage = "Failed to get ID from database for : " + api.getId().getApiName() +
+                    " when getting tier to billing engine plan mapping.";
+            //throw MonetizationException as it will be logged and handled by the caller
+            throw new MonetizationException(errorMessage, e);
+        } catch (SQLException e) {
+            String errorMessage = "Error while retrieving the API ID";
+            throw new MonetizationException(e);
+        }
     }
+
 
     @Override
     public Map<String, String> getCurrentUsageForSubscription(String subscriptionUUID, APIProvider apiProvider) throws MonetizationException {
@@ -239,7 +263,7 @@ public class MoesifMonetizationImpl implements Monetization {
         } catch (SQLException e) {
             String errorMessage = "Error while retrieving the API ID";
             throw new MonetizationException(errorMessage, e);
-        } catch (WorkflowException | StripeMonetizationException e) {
+        } catch (WorkflowException e) {
             throw new RuntimeException(e);
         }
         return billingEngineUsageData;
@@ -268,8 +292,6 @@ public class MoesifMonetizationImpl implements Monetization {
             String errorMessage = "Failed to get subscriptions of : " + apiIdentifier.getApiName();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
-        } catch (StripeMonetizationException e) {
-            throw new RuntimeException(e);
         }
         return revenueData;
     }
@@ -396,7 +418,7 @@ public class MoesifMonetizationImpl implements Monetization {
             createPricePayload.addProperty("currency",
                     currentTier.getMonetizationAttributes().get("currencyType"));
 
-         priceResponse = MonetizationUtils.invokeService(
+            priceResponse = MonetizationUtils.invokeService(
                     createPriceUrl, createPricePayload.toString(), moesifApplicationKey);
 
             if (log.isDebugEnabled()) {

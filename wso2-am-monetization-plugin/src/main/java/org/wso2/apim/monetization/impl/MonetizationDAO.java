@@ -1,11 +1,12 @@
 package org.wso2.apim.monetization.impl;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.apim.monetization.impl.constants.StripeMonetizationConstants;
+import org.wso2.apim.monetization.impl.model.MoesifPlanInfo;
 import org.wso2.carbon.apimgt.api.APIManagementException;
+import org.wso2.carbon.apimgt.api.MonetizationException;
 import org.wso2.carbon.apimgt.api.model.APIIdentifier;
-import org.wso2.carbon.apimgt.api.model.policy.SubscriptionPolicy;
 import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
 import org.wso2.carbon.apimgt.impl.utils.APIMgtDBUtil;
 
@@ -13,9 +14,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HashMap;
 import java.util.Map;
-
-import static org.apache.commons.io.filefilter.TrueFileFilter.INSTANCE;
 
 public class MonetizationDAO {
     private static MonetizationDAO INSTANCE = null;
@@ -68,33 +68,7 @@ public class MonetizationDAO {
         }
     }
 
-    public String getPriceIdForTier(int apiID, String tierName) {
-
-        Connection connection = null;
-        PreparedStatement statement = null;
-        String priceId = StringUtils.EMPTY;
-        try {
-            connection = APIMgtDBUtil.getConnection();
-            connection.setAutoCommit(false);
-            statement = connection.prepareStatement(StripeMonetizationConstants.GET_PRICE_ID_FOR_API_AND_TIER);
-            statement.setInt(1, apiID);
-            statement.setString(2, tierName);
-            ResultSet rs = statement.executeQuery();
-            while (rs.next()) {
-                priceId = rs.getString("MOESIF_PRICE_ID");
-            }
-            connection.commit();
-        } catch (SQLException e) {
-            String errorMessage = "Failed to get Price ID for tier : " + tierName;
-//            log.error(errorMessage, e);
-//            throw new StripeMonetizationException(errorMessage, e);
-        } finally {
-            APIMgtDBUtil.closeAllConnections(statement, connection, null);
-        }
-        return priceId;
-    }
-
-    public MoesifPlanInfo getPlanInfoForTier(int apiID, String tierName) {
+    public MoesifPlanInfo getPlanInfoForTier(int apiID, String tierName) throws APIManagementException {
         Connection connection = null;
         PreparedStatement statement = null;
         MoesifPlanInfo planInfo = null;
@@ -111,14 +85,13 @@ public class MonetizationDAO {
                         rs.getString("MOESIF_PRICE_ID"),
                         rs.getString("MOESIF_PLAN_NAME")
 
-
                 );
             }
             connection.commit();
         } catch (SQLException e) {
             String errorMessage = "Failed to get Plan Info for tier : " + tierName;
-//        log.error(errorMessage, e);
-//        throw new StripeMonetizationException(errorMessage, e);
+        log.error(errorMessage, e);
+        throw new APIManagementException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(statement, connection, null);
         }
@@ -126,46 +99,8 @@ public class MonetizationDAO {
     }
 
 
-    public void addMonetizationPlanData(SubscriptionPolicy policy, String planId, String planName, String priceId) {
-
-        Connection conn = null;
-        PreparedStatement policyStatement = null;
-        try {
-            conn = APIMgtDBUtil.getConnection();
-            conn.setAutoCommit(false);
-            policyStatement = conn.prepareStatement(StripeMonetizationConstants.INSERT_MONETIZATION_PLAN_DATA_SQL);
-            policyStatement.setString(1, apiMgtDAO.getSubscriptionPolicy(policy.getPolicyName(),
-                    policy.getTenantId()).getUUID());
-            policyStatement.setString(2, planId);
-            policyStatement.setString(3, planName);
-            policyStatement.setString(3, priceId);
-            policyStatement.executeUpdate();
-            conn.commit();
-        } catch (SQLException e) {
-            if (conn != null) {
-                try {
-                    conn.rollback();
-                } catch (SQLException ex) {
-                    String errorMessage = "Failed to rollback adding monetization plan for : " + policy.getPolicyName();
-//                    log.error(errorMessage);
-//                    throw new StripeMonetizationException(errorMessage, ex);
-                }
-            }
-            String errorMessage = "Failed to add monetization plan for : " + policy.getPolicyName();
-//            log.error(errorMessage);
-//            throw new StripeMonetizationException(errorMessage, e);
-        } catch (APIManagementException e) {
-            String errorMessage = "Failed to get subscription policy : " + policy.getPolicyName() +
-                    " from database when creating stripe plan.";
-//            log.error(errorMessage);
-//            throw new StripeMonetizationException(errorMessage, e);
-        } finally {
-            APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
-        }
-    }
-
     public void addSubscription(APIIdentifier identifier, int applicationId, int tenantId, String customerId,
-                                  String subscriptionId, String apiUuid) throws StripeMonetizationException {
+                                  String subscriptionId, String apiUuid) throws APIManagementException {
 
         Connection conn = null;
         ResultSet rs = null;
@@ -193,13 +128,13 @@ public class MonetizationDAO {
             String errorMessage = "Failed to add Stripe subscription info for API : " + identifier.getApiName() + " by"
                     + " Application : " + applicationId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new APIManagementException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, rs);
         }
     }
 
-    public String getSubscriptionUUID(int subscriptionId) throws StripeMonetizationException {
+    public String getSubscriptionUUID(int subscriptionId) throws APIManagementException {
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -217,7 +152,7 @@ public class MonetizationDAO {
         } catch (SQLException e) {
             String errorMessage = "Error while getting UUID of subscription ID : " + subscriptionId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new APIManagementException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, rs);
         }
@@ -225,7 +160,7 @@ public class MonetizationDAO {
     }
 
     public MonetizedStripeSubscriptionInfo getMonetizedSubscription(int apiId, int applicationId)
-            throws StripeMonetizationException {
+            throws APIManagementException {
 
         MonetizedStripeSubscriptionInfo subscription = null;
         Connection connection = null;
@@ -251,11 +186,40 @@ public class MonetizationDAO {
             String errorMessage = "Failed to get billing engine subscription for API : " + apiId +
                     " and application ID : " + applicationId;
             log.error(errorMessage, e);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new APIManagementException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(statement, connection, rs);
         }
         return subscription;
+    }
+
+
+    public static Map<String, String> getTierToBillingEnginePlanMapping(int apiID)
+            throws MonetizationException {
+
+        Map<String, String> moesifPlanTierMap = new HashMap<String, String>();
+        Connection connection = null;
+        PreparedStatement statement = null;
+        try {
+            connection = APIMgtDBUtil.getConnection();
+            connection.setAutoCommit(false);
+            statement = connection.prepareStatement(StripeMonetizationConstants.GET_BILLING_PLANS_BY_PRODUCT);
+            statement.setInt(1, apiID);
+            ResultSet rs = statement.executeQuery();
+            while (rs.next()) {
+                String tierName = rs.getString("TIER_NAME");
+                String stripePlanId = rs.getString("MOESIF_PLAN_ID");
+                moesifPlanTierMap.put(tierName, stripePlanId);
+            }
+            connection.commit();
+        } catch (SQLException e) {
+            String errorMessage = "Failed to get Moesif plan and tier mapping for API : " + apiID;
+            log.error(errorMessage);
+            throw new MonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(statement, connection, null);
+        }
+        return moesifPlanTierMap;
     }
 
 }

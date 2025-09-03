@@ -1,4 +1,4 @@
-package org.wso2.apim.monetization.impl;
+package org.wso2.apim.monetization.impl.constants;
 
 public class StripeMonetizationConstants {
     public static final String MONETIZATION_INFO = "MonetizationInfo";
@@ -26,6 +26,9 @@ public class StripeMonetizationConstants {
             "SELECT SUBSCRIPTION_ID, CUSTOMER_ID FROM " +
                     "AM_MONETIZATION_SUBSCRIPTIONS_MOESIF " +
                     "WHERE SUBSCRIBED_APPLICATION_ID = ? AND SUBSCRIBED_API_ID = ?";
+
+    public static final String GET_BILLING_PLANS_BY_PRODUCT = "SELECT TIER_NAME, MOESIF_PLAN_ID FROM AM_MONETIZATION_MOESIF " +
+            "WHERE API_ID = ?";
 
 
 }
